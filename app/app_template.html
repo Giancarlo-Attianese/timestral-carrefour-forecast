@@ -1,0 +1,357 @@
+<title>Timestral Forecast Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<style>
+/* Layout: one working column — verdict, controls + chart, tables, method notes. Lab-notebook feel, data first. */
+:root{
+  --bg:#f4f6f8; --panel:#ffffff; --fg:#17212b; --muted:#5b6876; --line:#dde3ea; --soft:#eef2f6;
+  --accent:#d9480f; --accent-soft:#fde9df; --actual:#17212b; --holdout:#e7edf4;
+  --good:#1f7a4d; --good-soft:#dcf1e5; --bad:#b42318; --bad-soft:#fbe3e1;
+  --display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --c-snaive:#8a96a3; --c-ets:#1b8a8a; --c-theta:#7048c6; --c-arima:#9a7b1c;
+  --c-t5:#f6a96f; --c-t28:#f08436; --c-t123:#e0601a; --c-t209:#c2410c; --c-tcal:#9f1239;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10161d; --panel:#17202a; --fg:#e6ebf0; --muted:#97a4b2; --line:#2a3542; --soft:#1d2733;
+  --accent:#ff8a4c; --accent-soft:#3a2418; --actual:#e6ebf0; --holdout:#1c2733;
+  --good:#5fd39a; --good-soft:#163527; --bad:#ff8a80; --bad-soft:#3d1c1a;
+  --c-snaive:#7d8996; --c-ets:#3cc1c1; --c-theta:#a587f0; --c-arima:#d0ab45;
+  --c-t5:#ffc79c; --c-t28:#ffa86b; --c-t123:#ff8a4c; --c-t209:#ff6a1f; --c-tcal:#f472b6; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10161d; --panel:#17202a; --fg:#e6ebf0; --muted:#97a4b2; --line:#2a3542; --soft:#1d2733;
+  --accent:#ff8a4c; --accent-soft:#3a2418; --actual:#e6ebf0; --holdout:#1c2733;
+  --good:#5fd39a; --good-soft:#163527; --bad:#ff8a80; --bad-soft:#3d1c1a;
+  --c-snaive:#7d8996; --c-ets:#3cc1c1; --c-theta:#a587f0; --c-arima:#d0ab45;
+  --c-t5:#ffc79c; --c-t28:#ffa86b; --c-t123:#ff8a4c; --c-t209:#ff6a1f; --c-tcal:#f472b6; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 56px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+h1,h2,h3{font-family:var(--display);font-weight:600;text-wrap:balance;margin:0;letter-spacing:.005em}
+h1{font-size:clamp(28px,4vw,40px);line-height:1.1}
+h2{font-size:22px}
+h3{font-size:16px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);max-width:68ch;margin:6px 0 0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;min-width:0}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header{display:flex;flex-direction:column;gap:6px}
+.facts{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font-size:13px;color:var(--muted)}
+.facts b{color:var(--fg);font-weight:500}
+/* verdict */
+.verdict{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.vcard{display:flex;flex-direction:column;gap:4px;padding:14px 16px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+.vcard.key{border-color:var(--accent);background:linear-gradient(0deg,var(--panel),var(--panel)),var(--accent-soft)}
+.vcard .big{font-family:var(--display);font-size:28px;font-weight:600;line-height:1.15}
+.vcard .sub{font-size:13px;color:var(--muted)}
+/* controls */
+.controls{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ctl label,.ctl .lab{font-size:12px;color:var(--muted);font-family:var(--mono);letter-spacing:.04em;text-transform:uppercase}
+select{font:inherit;font-size:14px;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg);max-width:100%}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex-wrap:wrap}
+.seg button{font:inherit;font-size:14px;padding:7px 12px;border:0;background:var(--panel);color:var(--fg);cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:inherit;font-size:13px;display:inline-flex;align-items:center;gap:7px;padding:5px 10px;border-radius:99px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
+.chip .sw{width:10px;height:10px;border-radius:50%;background:var(--c)}
+.chip[aria-pressed="false"]{color:var(--muted);opacity:.6}
+.chip[aria-pressed="false"] .sw{background:transparent;border:1.5px solid var(--c)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#chart{width:100%;height:440px}
+.chart-note{font-size:13px;color:var(--muted);margin-top:6px}
+/* tables */
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+thead th{font-family:var(--mono);font-size:11.5px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+td{font-family:var(--mono);font-variant-numeric:tabular-nums}
+td:first-child{font-family:var(--body)}
+td.best{color:var(--good);font-weight:600}
+tr.is-t td:first-child{font-weight:600}
+.mname{display:inline-flex;align-items:center;gap:8px}
+.mname .sw{width:9px;height:9px;border-radius:50%;background:var(--c);flex:none}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-family:var(--mono)}
+.pill.good{background:var(--good-soft);color:var(--good)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.mid{background:var(--soft);color:var(--muted)}
+.bar{position:relative;display:inline-block;width:70px;height:8px;background:var(--soft);border-radius:4px;vertical-align:middle;margin-left:8px;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--c,var(--accent));border-radius:4px}
+.heat td.cell{color:var(--fg)}
+.two{display:grid;grid-template-columns:1fr;gap:22px}
+.sec-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px 16px;margin-bottom:12px}
+.sec-head p{margin:2px 0 0;color:var(--muted);font-size:13.5px;max-width:70ch}
+.notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 28px;font-size:14px}
+@media (max-width:720px){.notes{grid-template-columns:1fr}}
+.notes p{margin:4px 0 0;color:var(--muted)}
+.notes dt{font-weight:600}
+.notes dd{margin:0 0 10px;color:var(--muted)}
+.toprow{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px}
+.lang{font-family:var(--mono);font-size:12.5px;color:var(--fg);text-decoration:none;border:1px solid var(--line);border-radius:99px;padding:3px 10px;background:var(--panel)}
+.lang:hover{border-color:var(--accent)}
+.lang:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.banner{padding:12px 14px;border-radius:8px;background:var(--accent-soft);color:var(--fg);font-size:14px}
+@media (max-width:560px){#chart{height:360px}.panel{padding:14px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="toprow"><span class="eyebrow">Carrefour Egitto · e-commerce · ott 2020 – set 2021</span><!--LANG--></div>
+    <h1>Timestral Forecast Lab</h1>
+    <p class="lede">Quanto prevede bene Timestral, il foundation model per serie temporali di Mistral, eseguito in locale su CPU e senza addestramento sui dati? Le ultime 4 settimane sono tenute fuori dal modello e servono a verificare le previsioni contro modelli statistici classici.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+  <section class="verdict" id="verdict" aria-label="Sintesi"></section>
+
+  <section class="panel">
+    <div class="controls">
+      <div class="ctl"><label for="sel-series">Serie</label><select id="sel-series"></select></div>
+      <div class="ctl"><span class="lab">Scenario</span>
+        <div class="seg" id="seg-scen" role="group" aria-label="Scenario">
+          <button data-v="holdout" aria-pressed="true">Holdout 28 giorni</button>
+          <button data-v="rolling" aria-pressed="false">Rolling 7 giorni</button>
+          <button data-v="future" aria-pressed="false">Futuro (ott 2021)</button>
+        </div></div>
+      <div class="ctl"><label for="sel-band">Banda di incertezza</label><select id="sel-band"></select></div>
+      <div class="ctl"><span class="lab">Livello</span>
+        <div class="seg" id="seg-level" role="group" aria-label="Livello banda">
+          <button data-v="80" aria-pressed="true">80%</button>
+          <button data-v="90" aria-pressed="false">90%</button>
+        </div></div>
+    </div>
+    <div class="ctl" style="margin-top:14px"><span class="lab">Modelli nel grafico</span><div class="chips" id="chips"></div></div>
+    <div id="chart" role="img" aria-label="Serie storica con previsioni"></div>
+    <p class="chart-note" id="chart-note"></p>
+  </section>
+
+  <section class="panel">
+    <div class="sec-head"><div><h2 id="mt-title">Metriche sulla serie selezionata</h2><p id="mt-sub"></p></div></div>
+    <div class="tbl-wrap"><table id="mt"></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="sec-head"><div><h2>Classifica su tutte le 11 serie</h2>
+      <p>Errori relativi al Seasonal Naive (ripete la settimana precedente), media geometrica sulle serie. Sotto 1 il modello batte il riferimento; 0,80 significa errore più basso del 20%.</p></div>
+      <div class="seg" id="seg-lb" role="group" aria-label="Scenario classifica">
+        <button data-v="holdout" aria-pressed="true">Holdout 28g</button>
+        <button data-v="rolling" aria-pressed="false">Rolling 7g</button>
+      </div></div>
+    <div class="tbl-wrap"><table id="lb"></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="sec-head"><div><h2>Serie per serie</h2>
+      <p>MASE relativo al Seasonal Naive per ogni serie e modello, nello scenario della classifica. Verde: meglio del riferimento; rosso: peggio. Clic su una riga per aprirla nel grafico.</p></div></div>
+    <div class="tbl-wrap"><table id="heat" class="heat"></table></div>
+  </section>
+
+  <section class="panel">
+    <h2 style="margin-bottom:10px">Metodo</h2>
+    <div class="notes">
+      <div><h3>Dati</h3><p id="note-data"></p></div>
+      <div><h3>Valutazione</h3>
+        <p><b>Holdout 28 giorni:</b> i modelli vedono i dati fino al 2 settembre 2021 e prevedono in un colpo solo i 28 giorni successivi.<br>
+        <b>Rolling 7 giorni:</b> quattro previsioni a una settimana, ognuna con tutti i dati disponibili fino a quel momento, sulle stesse 4 settimane.<br>
+        <b>Futuro:</b> previsione dei 28 giorni dopo la fine del dataset, usando tutto l'anno. Non c'è un dato reale con cui confrontarla.</p></div>
+      <div><h3>Metriche</h3><dl>
+        <dt>MAE · RMSE</dt><dd>Errore medio assoluto e quadratico della mediana, nell'unità della serie.</dd>
+        <dt>sMAPE</dt><dd>Errore percentuale simmetrico (0–200%).</dd>
+        <dt>MASE</dt><dd>MAE diviso l'errore del naive stagionale sui dati di training.</dd>
+        <dt>WQL</dt><dd>Perdita quantile pesata su 7 quantili (5–95%): misura tutta la distribuzione prevista, non solo la mediana.</dd>
+        <dt>Copertura 80%</dt><dd>Quota di giorni reali dentro l'intervallo 10–90%. Il valore ideale è 80%.</dd></dl></div>
+      <div><h3>Modelli</h3><p id="note-models"></p></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const D = /*DATA*/null;
+const QS = D.quantiles, H = D.H, T = D.dates.length;
+const COLOR = {"Seasonal Naive (7g)":"--c-snaive","AutoETS":"--c-ets","AutoTheta":"--c-theta","AutoARIMA":"--c-arima",
+  "Timestral-5M":"--c-t5","Timestral-28M":"--c-t28","Timestral-123M":"--c-t123","Timestral-209M":"--c-t209"};
+const colVar = m => m.includes("calendario") ? "--c-tcal" : (COLOR[m] || "--c-snaive");
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const isT = m => m.startsWith("Timestral");
+const tModels = D.models.filter(isT);
+const REF = "Seasonal Naive (7g)";
+const fmt = (x, d=0) => x==null||isNaN(x) ? "–" : x.toLocaleString("it-IT",{maximumFractionDigits:d,minimumFractionDigits:d});
+const fmtBig = x => Math.abs(x)>=1e6 ? fmt(x/1e6,2)+" M" : Math.abs(x)>=1e4 ? fmt(x/1e3,1)+" k" : fmt(x,0);
+const unit = s => s.startsWith("Fatturato") ? "EGP" : "righe";
+
+// future dates
+const allDates = D.dates.slice();
+{ let d = new Date(D.dates[T-1]+"T00:00:00Z"); for(let i=0;i<H;i++){ d = new Date(d.getTime()+864e5); allDates.push(d.toISOString().slice(0,10)); } }
+const labelDate = s => { const [y,m,d] = s.split("-"); return `${+d} ${["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"][+m-1]} ${y.slice(2)}`; };
+
+const state = { series:0, scen:"holdout", level:80, lb:"holdout",
+  on: new Set([REF, "AutoETS", ...(tModels.length? [tModels.filter(m=>!m.includes("calendario")).slice(-1)[0]] : [])]),
+  band: null };
+try { const s = JSON.parse(localStorage.getItem("tfl-state")||"{}"); if (s.series!=null && s.series < D.series.length) state.series = s.series; } catch(e){}
+
+const bestBy = (sc, key) => [...D.leaderboard[sc]].sort((a,b)=>a[key]-b[key])[0];
+const bestT = sc => { const r = D.leaderboard[sc].filter(r=>isT(r.model)); return r.length ? r.sort((a,b)=>a.relWQL-b.relWQL)[0] : null; };
+const bestClassic = sc => D.leaderboard[sc].filter(r=>!isT(r.model) && r.model!==REF).sort((a,b)=>a.relWQL-b.relWQL)[0];
+state.band = (bestT("holdout")||bestBy("holdout","relWQL")).model;
+if (!state.on.has(state.band)) state.on.add(state.band);
+
+// header facts
+document.getElementById("facts").innerHTML =
+  `<span><b class="num">${fmt(D.n_rows)}</b> righe d'ordine</span><span><b class="num">${T}</b> giorni</span>` +
+  `<span><b class="num">${D.series.length}</b> serie giornaliere</span><span>Holdout <b>${labelDate(D.dates[T-H])} – ${labelDate(D.dates[T-1])}</b></span>` +
+  `<span><b>${D.models.length}</b> modelli a confronto</span>`;
+document.getElementById("note-data").textContent =
+  `${fmt(D.n_rows)} righe d'ordine del negozio online Carrefour in Egitto (Kaggle), aggregate per giorno. Il fatturato netto esclude gli ordini cancellati o rimborsati ed è in sterline egiziane (EGP). Le serie per categoria sono le 8 con più fatturato; "Others" è esclusa perché è un contenitore residuo che si azzera proprio nel periodo di test. Le serie hanno picchi molto alti nei giorni di promozione (es. 11.11, White Friday), che nessun modello senza calendario promozionale può prevedere.`;
+document.getElementById("note-models").innerHTML =
+  `<b>${tModels.filter(m=>!m.includes("calendario")).join(", ") || "Timestral"}</b>: zero-shot, pesi ufficiali Mistral eseguiti in locale su CPU, nessun addestramento su questi dati. La variante <i>+ calendario</i> riceve il giorno della settimana come covariata nota in futuro.<br><b>Classici</b> (statsforecast): Seasonal Naive, AutoETS, AutoTheta e AutoARIMA con stagionalità settimanale, stimati su ogni serie. Tutte le previsioni sono limitate a valori ≥ 0.`;
+if (!tModels.length) { const b = document.getElementById("banner"); b.hidden=false; b.textContent = "Bozza: per ora ci sono solo i modelli classici. I risultati di Timestral arrivano appena i pesi sono disponibili."; }
+
+// verdict
+function renderVerdict(){
+  const sc = "holdout", t = bestT(sc), c = bestClassic(sc), r = D.leaderboard.rolling;
+  const pct = x => (x<1? "−":"+") + fmt(Math.abs(1-x)*100,0) + "%";
+  let html = "";
+  if (t) {
+    const tr = r.find(x=>x.model===t.model);
+    html += `<div class="vcard key"><span class="eyebrow">Miglior Timestral · holdout</span><span class="big">${t.model}</span>
+      <span class="sub">WQL ${pct(t.relWQL)} e MASE ${pct(t.relMASE)} rispetto al Seasonal Naive. Batte il riferimento su ${t.wins} serie su ${D.series.length}.</span></div>`;
+    html += `<div class="vcard"><span class="eyebrow">Contro il miglior classico</span><span class="big">${t.relWQL < c.relWQL ? "Timestral avanti" : c.model+" avanti"}</span>
+      <span class="sub">${c.model}: WQL ${pct(c.relWQL)}, MASE ${pct(c.relMASE)}. Differenza WQL: ${fmt(Math.abs(t.relWQL-c.relWQL)*100,1)} punti.</span></div>`;
+    html += `<div class="vcard"><span class="eyebrow">Settimana per settimana</span><span class="big">WQL ${pct(tr.relWQL)}</span>
+      <span class="sub">${t.model} con previsioni a 7 giorni aggiornate ogni settimana. Copertura dell'intervallo 80%: ${fmt(tr.Cov80,0)}%.</span></div>`;
+  } else {
+    html += `<div class="vcard key"><span class="eyebrow">Miglior classico · holdout</span><span class="big">${c.model}</span><span class="sub">WQL ${pct(c.relWQL)}, MASE ${pct(c.relMASE)} rispetto al Seasonal Naive.</span></div>`;
+  }
+  document.getElementById("verdict").innerHTML = html;
+}
+
+// controls
+const selS = document.getElementById("sel-series");
+D.series.forEach((s,i)=>{ const o=document.createElement("option"); o.value=i; o.textContent=s; selS.append(o); });
+selS.value = state.series;
+selS.onchange = () => { state.series = +selS.value; save(); renderAll(); };
+const selB = document.getElementById("sel-band");
+D.models.forEach(m=>{ const o=document.createElement("option"); o.value=m; o.textContent=m; selB.append(o); });
+selB.value = state.band;
+selB.onchange = () => { state.band = selB.value; state.on.add(state.band); renderChips(); renderChart(); };
+function seg(id, key, cb){ const g=document.getElementById(id); g.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  g.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed", x===b)); state[key] = key==="level" ? +b.dataset.v : b.dataset.v; cb(); }); }
+seg("seg-scen","scen",()=>{ renderChart(); renderMetrics(); });
+seg("seg-level","level",renderChart);
+seg("seg-lb","lb",()=>{ renderLB(); renderHeat(); });
+function save(){ try{ localStorage.setItem("tfl-state", JSON.stringify({series:state.series})); }catch(e){} }
+
+function renderChips(){
+  const c = document.getElementById("chips"); c.innerHTML = "";
+  D.models.forEach(m=>{ const b=document.createElement("button"); b.className="chip"; b.style.setProperty("--c", `var(${colVar(m)})`);
+    b.setAttribute("aria-pressed", state.on.has(m)); b.innerHTML = `<span class="sw"></span>${m}`;
+    b.onclick=()=>{ state.on.has(m)? state.on.delete(m) : state.on.add(m); renderChips(); renderChart(); }; c.append(b); });
+}
+
+// chart
+let chart;
+function renderChart(){
+  if (!chart) chart = echarts.init(document.getElementById("chart"), null, {renderer:"canvas"});
+  const s = state.series, sc = state.scen, y = D.values[s];
+  const start = sc==="future" ? T : T-H;
+  const fg = css("--fg"), muted = css("--muted"), line = css("--line");
+  const N = sc==="future" ? allDates.length : T;
+  const pad = arr => { const a = new Array(N).fill(null); arr.forEach((v,i)=>a[start+i]=v); return a; };
+  const qi = q => QS.indexOf(q);
+  const [lo, hi] = state.level===80 ? [qi(0.1), qi(0.9)] : [qi(0.05), qi(0.95)];
+  const series = [{ name:"Dati reali", type:"line", data:[...y, ...new Array(N-T).fill(null)], showSymbol:false, lineStyle:{width:1.6,color:css("--actual")}, itemStyle:{color:css("--actual")}, z:5,
+    markArea: sc==="future" ? {silent:true, itemStyle:{color:css("--holdout")}, data:[[{xAxis:allDates[T], name:"Futuro"},{xAxis:allDates.at(-1)}]], label:{color:muted, fontSize:11}}
+      : {silent:true, itemStyle:{color:css("--holdout")}, data:[[{xAxis:allDates[T-H], name:"Dati tenuti fuori"},{xAxis:allDates[T-1]}]], label:{color:muted, fontSize:11}} }];
+  if (state.band && D.forecasts[state.band]) {
+    const q = D.forecasts[state.band].q[sc][s], c = css(colVar(state.band));
+    series.push({ name:"_lo", type:"line", stack:"band", data:pad(q.map(r=>r[lo])), showSymbol:false, lineStyle:{opacity:0}, silent:true, tooltip:{show:false} });
+    series.push({ name:`Banda ${state.level}% · ${state.band}`, type:"line", stack:"band", data:pad(q.map(r=>r[hi]-r[lo])), showSymbol:false, lineStyle:{opacity:0}, areaStyle:{color:c, opacity:.18}, itemStyle:{color:c}, silent:true, tooltip:{show:false} });
+  }
+  D.models.filter(m=>state.on.has(m)).forEach(m=>{
+    const q = D.forecasts[m].q[sc][s], c = css(colVar(m));
+    series.push({ name:m, type:"line", data:pad(q.map(r=>r[qi(0.5)])), showSymbol:false, lineStyle:{width: m===state.band?2.4:1.5, color:c, type: isT(m)?"solid":"dashed"}, itemStyle:{color:c}, z: m===state.band?4:3 });
+  });
+  const zoomStart = Math.max(0, 1 - 150 / N) * 100;
+  chart.setOption({
+    animation:false, backgroundColor:"transparent",
+    textStyle:{fontFamily:"IBM Plex Sans, system-ui, sans-serif", color:fg},
+    grid:{left:8, right:12, top:62, bottom:70, containLabel:true},
+    legend:{top:0, left:0, type:"scroll", textStyle:{color:fg, fontSize:12}, data: series.filter(x=>!x.name.startsWith("_")).map(x=>x.name), icon:"roundRect", itemWidth:12, itemHeight:4, pageTextStyle:{color:muted}},
+    tooltip:{trigger:"axis", backgroundColor:css("--panel"), borderColor:line, textStyle:{color:fg, fontSize:12},
+      valueFormatter:v=> v==null? "–" : fmt(v,0)},
+    xAxis:{type:"category", data:allDates.slice(0,N), boundaryGap:false, axisLine:{lineStyle:{color:line}}, axisTick:{show:false},
+      axisLabel:{color:muted, formatter:labelDate, hideOverlap:true}},
+    yAxis:{type:"value", axisLabel:{color:muted, formatter:fmtBig}, splitLine:{lineStyle:{color:line, type:[3,3]}}, name:unit(D.series[s]), nameTextStyle:{color:muted, align:"left"}, nameGap:12},
+    dataZoom:[{type:"inside", start:zoomStart, end:100},{type:"slider", start:zoomStart, end:100, height:22, bottom:12, borderColor:line,
+      textStyle:{color:muted}, fillerColor:css("--accent-soft"), dataBackground:{lineStyle:{color:muted}, areaStyle:{color:css("--soft")}}, handleStyle:{color:css("--panel"), borderColor:muted}}],
+    series
+  }, true);
+  const note = {holdout:"Previsione unica fatta il 2 settembre 2021 per i 28 giorni successivi, che i modelli non hanno visto.",
+    rolling:"Quattro previsioni a 7 giorni, una per settimana, ognuna con i dati disponibili fino al giorno prima.",
+    future:"Previsione dei 28 giorni dopo la fine del dataset (1–28 ottobre 2021), basata su tutto l'anno. Non ci sono dati reali per verificarla."}[sc];
+  document.getElementById("chart-note").textContent = note + " Trascina la barra in basso per vedere tutta la serie.";
+}
+
+// metrics table for selected series
+function renderMetrics(){
+  const s = state.series, sc = state.scen, el = document.getElementById("mt");
+  const name = D.series[s];
+  if (sc === "future") {
+    document.getElementById("mt-title").textContent = "Previsione per le prossime 4 settimane";
+    document.getElementById("mt-sub").textContent = `${name}: somma delle mediane giornaliere per settimana (${unit(name)}). Per confronto, l'ultima settimana reale e la media settimanale dell'anno.`;
+    const y = D.values[s], lastW = y.slice(-7).reduce((a,b)=>a+b,0), avgW = y.reduce((a,b)=>a+b,0)/T*7;
+    const wk = i => `${labelDate(allDates[T+i*7])} – ${labelDate(allDates[T+i*7+6])}`;
+    let h = `<thead><tr><th>Modello</th>${[0,1,2,3].map(i=>`<th>${wk(i)}</th>`).join("")}<th>Totale 28g</th></tr></thead><tbody>`;
+    D.models.forEach(m=>{ const q = D.forecasts[m].q.future[s].map(r=>r[QS.indexOf(0.5)]);
+      const w = [0,1,2,3].map(i=>q.slice(i*7,i*7+7).reduce((a,b)=>a+b,0));
+      h += `<tr class="${isT(m)?"is-t":""}"><td><span class="mname" style="--c:var(${colVar(m)})"><span class="sw"></span>${m}</span></td>${w.map(v=>`<td>${fmt(v)}</td>`).join("")}<td>${fmt(w.reduce((a,b)=>a+b,0))}</td></tr>`; });
+    h += `<tr><td style="color:var(--muted)">Ultima settimana reale · media settimanale anno</td><td colspan="4" style="color:var(--muted)">${fmt(lastW)} · ${fmt(avgW)}</td><td></td></tr></tbody>`;
+    el.innerHTML = h; return;
+  }
+  document.getElementById("mt-title").textContent = "Metriche sulla serie selezionata";
+  document.getElementById("mt-sub").textContent = `${name}, scenario ${sc==="holdout"?"holdout 28 giorni":"rolling 7 giorni"}. In verde il valore migliore per colonna. MAE e RMSE in ${unit(name)}.`;
+  const cols = [["MAE",0,"min"],["RMSE",0,"min"],["sMAPE",1,"min"],["MASE",3,"min"],["WQL",3,"min"],["Cov80",0,"cov"]];
+  const rows = D.models.map(m=>({m, v:D.forecasts[m].metrics[sc][s]}));
+  const best = {}; cols.forEach(([k,,t])=>{ best[k] = t==="cov" ? Math.min(...rows.map(r=>Math.abs(r.v[k]-80))) : Math.min(...rows.map(r=>r.v[k])); });
+  let h = `<thead><tr><th>Modello</th><th>MAE</th><th>RMSE</th><th>sMAPE %</th><th>MASE</th><th>WQL</th><th>Copertura 80%</th></tr></thead><tbody>`;
+  rows.forEach(({m,v})=>{ h += `<tr class="${isT(m)?"is-t":""}"><td><span class="mname" style="--c:var(${colVar(m)})"><span class="sw"></span>${m}</span></td>` +
+    cols.map(([k,d,t])=>{ const b = t==="cov" ? Math.abs(v[k]-80)===best[k] : v[k]===best[k]; return `<td class="${b?"best":""}">${fmt(v[k],d)}${k==="Cov80"?"%":""}</td>`; }).join("") + `</tr>`; });
+  el.innerHTML = h + "</tbody>";
+}
+
+function relPill(x){ const cls = x<0.97?"good":x>1.03?"bad":"mid"; return `<span class="pill ${cls}">${fmt(x,3)}</span>`; }
+function renderLB(){
+  const rows = [...D.leaderboard[state.lb]].sort((a,b)=>a.relWQL-b.relWQL);
+  const maxW = Math.max(...rows.map(r=>r.relWQL));
+  let h = `<thead><tr><th>#</th><th style="text-align:left">Modello</th><th>WQL relativo</th><th>MASE relativo</th><th>sMAPE medio</th><th>Copertura 80%</th><th>Serie vinte vs naive</th></tr></thead><tbody>`;
+  rows.forEach((r,i)=>{ h += `<tr class="${isT(r.model)?"is-t":""}"><td>${i+1}</td><td style="text-align:left;font-family:var(--body)"><span class="mname" style="--c:var(${colVar(r.model)})"><span class="sw"></span>${r.model}</span></td>
+    <td>${relPill(r.relWQL)}<span class="bar" style="--c:var(${colVar(r.model)})"><i style="width:${r.relWQL/maxW*100}%"></i></span></td><td>${relPill(r.relMASE)}</td>
+    <td>${fmt(r.sMAPE,1)}%</td><td>${fmt(r.Cov80,0)}%</td><td>${r.model===REF?"–":`${r.wins}/${D.series.length}`}</td></tr>`; });
+  document.getElementById("lb").innerHTML = h + "</tbody>";
+}
+function renderHeat(){
+  const sc = state.lb, ms = D.models.filter(m=>m!==REF);
+  const good = css("--good"), bad = css("--bad");
+  let h = `<thead><tr><th>Serie</th>${ms.map(m=>`<th title="${m}">${m.replace("Timestral-","T-").replace(" + calendario","+cal").replace("Seasonal Naive (7g)","SNaive")}</th>`).join("")}</tr></thead><tbody>`;
+  D.series.forEach((s,i)=>{ const ref = D.forecasts[REF].metrics[sc][i].MASE;
+    const vals = ms.map(m=>D.forecasts[m].metrics[sc][i].MASE/ref), mn = Math.min(...vals);
+    h += `<tr data-i="${i}" style="cursor:pointer"><td>${s}</td>` + vals.map(v=>{ const a = Math.min(Math.abs(Math.log(v))/Math.log(2),1)*0.55;
+      const c = v<1? good : bad; return `<td class="cell" style="background:color-mix(in srgb, ${c} ${a*100}%, transparent);${v===mn?"font-weight:600":""}">${fmt(v,2)}</td>`; }).join("") + `</tr>`; });
+  const el = document.getElementById("heat"); el.innerHTML = h + "</tbody>";
+  el.querySelectorAll("tr[data-i]").forEach(tr=>tr.onclick=()=>{ state.series=+tr.dataset.i; selS.value=state.series; save(); renderAll(); document.getElementById("chart").scrollIntoView({behavior:"smooth", block:"center"}); });
+}
+function renderAll(){ renderChart(); renderMetrics(); }
+renderVerdict(); renderChips(); renderAll(); renderLB(); renderHeat();
+addEventListener("resize", ()=>chart && chart.resize());
+const rerender = ()=>{ renderChart(); renderHeat(); };
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", rerender);
+new MutationObserver(rerender).observe(document.documentElement, {attributes:true, attributeFilter:["data-theme"]});
+</script>
