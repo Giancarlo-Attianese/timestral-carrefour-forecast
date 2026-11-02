@@ -1,0 +1,5 @@
+numpy>=1.24
+pandas>=2.0
+statsforecast>=2.0
+torch>=2.4
+timestral @ git+https://github.com/mistralai/timestral.git

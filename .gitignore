@@ -1,0 +1,18 @@
+# Raw dataset (download it from Kaggle, see data/README.md)
+data/*.csv
+
+# Model weights (download them from Hugging Face, see weights/README.md)
+weights/*/
+*.safetensors
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
